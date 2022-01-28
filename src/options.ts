@@ -256,6 +256,12 @@ export interface IProps<ListItem = any> {
   withOverlay?: boolean;
 
   /**
+   * Define the modal slide direction
+   * @default top
+   */
+  direction?: 'top' | 'bottom';
+
+  /**
    * A header component outside of the ScrollView, on top of the modal.
    */
   HeaderComponent?: React.ReactNode;

@@ -100,6 +100,7 @@ const ModalizeBase = (
     tapGestureEnabled = true,
     closeOnOverlayTap = true,
     closeSnapPointStraightEnabled = true,
+    direction = 'top',
 
     // Animations
     openAnimationConfig = {
@@ -141,8 +142,9 @@ const ModalizeBase = (
   const { height: screenHeight } = useDimensions();
   const isHandleOutside = handlePosition === 'outside';
   const handleHeight = withHandle ? 20 : isHandleOutside ? 35 : 20;
-  const fullHeight = screenHeight - modalTopOffset;
-  const computedHeight = fullHeight - handleHeight - (isIphoneX ? 34 : 0);
+  const slideFromTop = direction === 'bottom';
+  const fullHeight = screenHeight - (slideFromTop ? 0 : modalTopOffset);
+  const computedHeight = fullHeight - (slideFromTop ? 0 : handleHeight) - (isIphoneX ? 34 : 0);
   const endHeight = modalHeight || computedHeight;
   const adjustValue = adjustToContentHeight ? undefined : endHeight;
   const snaps = snapPoint ? [0, endHeight - snapPoint, endHeight] : [0, endHeight];
@@ -167,7 +169,8 @@ const ModalizeBase = (
   const overlay = React.useRef(new Animated.Value(0)).current;
   const beginScrollY = React.useRef(new Animated.Value(0)).current;
   const dragY = React.useRef(new Animated.Value(0)).current;
-  const translateY = React.useRef(new Animated.Value(screenHeight)).current;
+  const translateY = React.useRef(new Animated.Value(slideFromTop ? -screenHeight : screenHeight))
+    .current;
   const reverseBeginScrollY = React.useRef(Animated.multiply(new Animated.Value(-1), beginScrollY))
     .current;
 
@@ -309,9 +312,17 @@ const ModalizeBase = (
     const { timing, spring } = closeAnimationConfig;
     const lastSnapValue = snapPoint ? snaps[1] : 80;
     const toInitialAlwaysOpen = dest === 'alwaysOpen' && Boolean(alwaysOpen);
-    const toValue =
+    let toValue =
       toInitialAlwaysOpen && alwaysOpen ? (modalHeightValue || 0) - alwaysOpen : screenHeight;
-
+    if (slideFromTop) {
+      const max =
+        modalHeight && modalHeight > 0
+          ? modalHeight
+          : Array.from(layouts).reduce((acc, cur) => acc + cur?.[1], 0);
+      const flat = StyleSheet.flatten(modalStyle);
+      const topMargin = parseFloat(`${flat.marginTop || 0.0}`) || 0.0;
+      toValue = -max - topMargin;
+    }
     backButtonListenerRef.current?.remove();
     cancelTranslateY.setValue(1);
     setBeginScrollYValue(0);
@@ -454,9 +465,12 @@ const ModalizeBase = (
       modalPosition === 'top' &&
       beginScrollYValue >= (snapPoint ? 0 : SCROLL_THRESHOLD) &&
       translationY < 0;
-    const thresholdProps = translationY > threshold && beginScrollYValue === 0;
+    const translationMultiplier = slideFromTop ? -1 : 1;
+    const thresholdProps =
+      translationY * translationMultiplier > threshold && beginScrollYValue === 0;
+    const velocityExceeded = slideFromTop ? velocityY <= velocity * -1 : velocityY >= velocity;
     const closeThreshold = velocity
-      ? (beginScrollYValue <= 20 && velocityY >= velocity) || thresholdProps
+      ? (beginScrollYValue <= 20 && velocityExceeded) || thresholdProps
       : thresholdProps;
     let enableBouncesValue = true;
 
@@ -631,7 +645,7 @@ const ModalizeBase = (
     useNativeDriver: USE_NATIVE_DRIVER,
     listener: ({ nativeEvent: { translationY } }: PanGestureHandlerStateChangeEvent) => {
       if (panGestureAnimatedValue) {
-        const offset = alwaysOpen ?? snapPoint ?? 0;
+        const offset = alwaysOpen ?? snapPoint ?? slideFromTop ? 0 : -endHeight;
         const diff = Math.abs(translationY / (endHeight - offset));
         const y = translationY <= 0 ? diff : 1 - diff;
         let value: number;
@@ -650,7 +664,10 @@ const ModalizeBase = (
   });
 
   const renderHandle = (): JSX.Element | null => {
-    const handleStyles: (TStyle | undefined)[] = [s.handle];
+    const handlePosition = slideFromTop ? { bottom: -20 } : { top: -20 };
+    const handleBottomPosition = slideFromTop ? { bottom: 0 } : { top: 0 };
+
+    const handleStyles: (TStyle | undefined)[] = [s.handle, handlePosition];
     const shapeStyles: (TStyle | undefined)[] = [s.handle__shape, handleStyle];
 
     if (!withHandle) {
@@ -658,7 +675,7 @@ const ModalizeBase = (
     }
 
     if (!isHandleOutside) {
-      handleStyles.push(s.handleBottom);
+      handleStyles.push(handleBottomPosition);
       shapeStyles.push(s.handle__shapeBottom, handleStyle);
     }
 
@@ -775,8 +792,9 @@ const ModalizeBase = (
   };
 
   const renderChildren = (): JSX.Element => {
+    const activationMultiplier = slideFromTop ? -1 : 1;
     const style = adjustToContentHeight ? s.content__adjustHeight : s.content__container;
-    const minDist = isRNGH2() ? undefined : ACTIVATED;
+    const minDist = isRNGH2() ? undefined : ACTIVATED * activationMultiplier;
 
     return (
       <PanGestureHandler
@@ -786,7 +804,7 @@ const ModalizeBase = (
         shouldCancelWhenOutside={false}
         onGestureEvent={handleGestureEvent}
         minDist={minDist}
-        activeOffsetY={ACTIVATED}
+        activeOffsetY={ACTIVATED * activationMultiplier}
         activeOffsetX={ACTIVATED}
         onHandlerStateChange={handleChildren}
       >
@@ -806,7 +824,6 @@ const ModalizeBase = (
   const renderOverlay = (): JSX.Element => {
     const pointerEvents =
       alwaysOpen && (modalPosition === 'initial' || !modalPosition) ? 'box-none' : 'auto';
-
     return (
       <PanGestureHandler
         enabled={panGestureEnabled}
@@ -918,6 +935,12 @@ const ModalizeBase = (
     };
   }, []);
 
+  const fromTopOffset = slideFromTop ? -screenHeight : 0;
+  const marginProp = slideFromTop ? { marginBottom: 'auto' } : { marginTop: 'auto' };
+  const radiusStyle = slideFromTop
+    ? { borderBottomLeftRadius: 12, borderBottomRightRadius: 12 }
+    : { borderTopLeftRadius: 12, borderTopRightRadius: 12 };
+
   const keyboardAvoidingViewProps: Animated.AnimatedProps<KeyboardAvoidingViewProps> = {
     keyboardVerticalOffset: keyboardAvoidingOffset,
     behavior: keyboardAvoidingBehavior,
@@ -931,13 +954,15 @@ const ModalizeBase = (
         transform: [
           {
             translateY: value.interpolate({
-              inputRange: [-40, 0, endHeight],
-              outputRange: [0, 0, endHeight],
+              inputRange: [-40 + fromTopOffset, fromTopOffset, endHeight],
+              outputRange: [fromTopOffset, fromTopOffset, endHeight],
               extrapolate: 'clamp',
             }),
           },
         ],
       },
+      radiusStyle,
+      marginProp,
     ],
   };
 
