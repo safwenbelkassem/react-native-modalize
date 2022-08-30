@@ -101,7 +101,7 @@ export interface IProps<ListItem = any> {
    * A number that will enable the snapping feature and create an intermediate point before opening the modal to full screen.
    */
   snapPoint?: number;
-
+snapPoints?: number[];
   /**
    * A number to define the modal's total height.
    */
